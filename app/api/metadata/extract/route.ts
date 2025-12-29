@@ -152,43 +152,228 @@ function extractDescription(html: string, baseUrl?: string): string {
   return "暂无描述信息"
 }
 
-// 提取图片
+// 提取图片 - 增强版本
 function extractImage(html: string, baseUrl: string): string | null {
   const domain = new URL(baseUrl).hostname
-  
+
   // 哔哩哔哩视频封面特殊处理
   if (domain.includes('bilibili.com')) {
     return extractBilibiliCover(html, baseUrl)
   }
-  
+
   // ArchDaily图片特殊处理
   if (domain.includes('archdaily.cn') || domain.includes('archdaily.com')) {
     return extractArchDailyFirstImage(html, baseUrl)
   }
-  
+
   // X(Twitter)特殊处理
   if (domain.includes('twitter.com') || domain.includes('x.com')) {
     return extractTwitterImage(html, baseUrl)
   }
-  
+
   // itch.io特殊处理
   if (domain.includes('itch.io')) {
     return extractItchIoImage(html, baseUrl)
   }
-  
-  // 尝试提取 og:image
-  const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
-  if (ogImageMatch) {
-    return resolveUrl(ogImageMatch[1], baseUrl)
+
+  // 通用图片提取策略（按优先级排序）
+  const imagePatterns = [
+    // Open Graph协议图片（最标准）
+    /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i,
+
+    // Twitter Card图片
+    /<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i,
+
+    // Schema.org结构化数据（itemprop）
+    /<meta[^>]*itemprop=["']image["'][^>]*content=["']([^"']+)["']/i,
+    /<img[^>]*itemprop=["']image["'][^>]*src=["']([^"']+)["']/i,
+
+    // Windows磁贴图片
+    /<meta[^>]*name=["']msapplication-TileImage["'][^>]*content=["']([^"']+)["']/i,
+
+    // Apple touch icon (备选高质量图片)
+    /<link[^>]*rel=["']apple-touch-icon["'][^>]*href=["']([^"']+)["']/i,
+  ]
+
+  // 尝试从meta标签提取
+  for (const pattern of imagePatterns) {
+    const match = html.match(pattern)
+    if (match && match[1]) {
+      const imageUrl = resolveUrl(match[1], baseUrl)
+      if (isValidImageUrl(imageUrl)) {
+        return imageUrl
+      }
+    }
   }
-  
-  // 尝试提取 twitter:image
-  const twitterImageMatch = html.match(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i)
-  if (twitterImageMatch) {
-    return resolveUrl(twitterImageMatch[1], baseUrl)
+
+  // 尝试从JSON-LD结构化数据提取
+  const jsonLdImage = extractImageFromJsonLd(html, baseUrl)
+  if (jsonLdImage && isValidImageUrl(jsonLdImage)) {
+    return jsonLdImage
   }
-  
+
+  // 最后尝试：查找页面中第一张较大的图片（排除小图标）
+  const firstLargeImage = extractFirstLargeImage(html, baseUrl)
+  if (firstLargeImage && isValidImageUrl(firstLargeImage)) {
+    return firstLargeImage
+  }
+
   return null
+}
+
+// 从JSON-LD结构化数据中提取图片
+function extractImageFromJsonLd(html: string, baseUrl: string): string | null {
+  const jsonLdMatches = html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
+
+  for (const match of jsonLdMatches) {
+    try {
+      const jsonData = JSON.parse(match[1])
+
+      // 处理单个对象
+      const image = findImageInJsonLdObject(jsonData)
+      if (image) {
+        return resolveUrl(image, baseUrl)
+      }
+
+      // 处理数组
+      if (Array.isArray(jsonData)) {
+        for (const item of jsonData) {
+          const image = findImageInJsonLdObject(item)
+          if (image) {
+            return resolveUrl(image, baseUrl)
+          }
+        }
+      }
+    } catch (e) {
+      // 忽略JSON解析错误，继续尝试下一个
+      continue
+    }
+  }
+
+  return null
+}
+
+// 在JSON-LD对象中查找图片
+function findImageInJsonLdObject(obj: any): string | null {
+  if (!obj || typeof obj !== 'object') return null
+
+  // 直接的image属性
+  if (obj.image) {
+    if (typeof obj.image === 'string') {
+      return obj.image
+    }
+    // image可能是对象
+    if (obj.image.url) {
+      return obj.image.url
+    }
+    // image可能是数组
+    if (Array.isArray(obj.image) && obj.image.length > 0) {
+      const firstImage = obj.image[0]
+      return typeof firstImage === 'string' ? firstImage : firstImage.url
+    }
+  }
+
+  // thumbnailUrl属性
+  if (obj.thumbnailUrl) {
+    return typeof obj.thumbnailUrl === 'string' ? obj.thumbnailUrl : obj.thumbnailUrl[0]
+  }
+
+  // logo属性（备选）
+  if (obj.logo) {
+    if (typeof obj.logo === 'string') {
+      return obj.logo
+    }
+    if (obj.logo.url) {
+      return obj.logo.url
+    }
+  }
+
+  return null
+}
+
+// 提取页面中第一张较大的图片
+function extractFirstLargeImage(html: string, baseUrl: string): string | null {
+  // 查找带有尺寸属性的图片（宽度或高度至少200px）
+  const imagePatternsWithSize = [
+    /<img[^>]*src=["']([^"']+)["'][^>]*(?:width=["'](\d+)|height=["'](\d+))/gi,
+    /<img[^>]*(?:width=["'](\d+)|height=["'](\d+))[^>]*src=["']([^"']+)["']/gi,
+  ]
+
+  for (const pattern of imagePatternsWithSize) {
+    const matches = html.matchAll(pattern)
+    for (const match of matches) {
+      const src = match[1] || match[3]
+      const width = parseInt(match[2] || match[1] || '0')
+      const height = parseInt(match[3] || match[2] || '0')
+
+      if (src && (width >= 200 || height >= 200)) {
+        const imageUrl = resolveUrl(src, baseUrl)
+        if (isValidImageUrl(imageUrl) && !isLikelyIcon(imageUrl)) {
+          return imageUrl
+        }
+      }
+    }
+  }
+
+  // 如果没有找到带尺寸的图片，找第一张看起来不是图标的图片
+  const simpleImagePattern = /<img[^>]*src=["']([^"']+\.(?:jpg|jpeg|png|webp))["']/i
+  const simpleMatch = html.match(simpleImagePattern)
+  if (simpleMatch && simpleMatch[1]) {
+    const imageUrl = resolveUrl(simpleMatch[1], baseUrl)
+    if (isValidImageUrl(imageUrl) && !isLikelyIcon(imageUrl)) {
+      return imageUrl
+    }
+  }
+
+  return null
+}
+
+// 验证图片URL是否有效
+function isValidImageUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false
+
+  // 排除data URI
+  if (url.startsWith('data:')) return false
+
+  // 必须是http/https协议
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return false
+
+  // 排除明显的占位符
+  if (url.includes('placeholder') || url.includes('default-image')) return false
+
+  // 检查是否是常见图片格式
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp']
+  const hasImageExtension = imageExtensions.some(ext => url.toLowerCase().includes(ext))
+
+  // 如果URL中没有明确的图片扩展名，也可能是有效的（比如动态生成的图片）
+  // 但至少要排除明显的非图片URL
+  if (!hasImageExtension && url.includes('.js') || url.includes('.css')) {
+    return false
+  }
+
+  return true
+}
+
+// 判断URL是否可能是图标
+function isLikelyIcon(url: string): boolean {
+  const iconKeywords = ['icon', 'logo', 'avatar', 'sprite', 'button', 'badge']
+  const lowerUrl = url.toLowerCase()
+
+  // 检查是否包含图标关键词
+  if (iconKeywords.some(keyword => lowerUrl.includes(keyword))) {
+    return true
+  }
+
+  // 检查尺寸（如果URL中包含尺寸信息）
+  const sizeMatch = url.match(/(\d+)x(\d+)/)
+  if (sizeMatch) {
+    const size = parseInt(sizeMatch[1])
+    if (size < 100) return true // 小于100px的可能是图标
+  }
+
+  return false
 }
 
 // 提取哔哩哔哩视频封面
@@ -442,17 +627,52 @@ function extractTwitterDescription(html: string): string {
   return "推文内容"
 }
 
-// 提取 favicon
+// 提取 favicon - 增强版本
 function extractFavicon(html: string, baseUrl: string): string {
-  // 尝试提取 link rel="icon"
-  const iconMatch = html.match(/<link[^>]*rel=["'](?:icon|shortcut icon)["'][^>]*href=["']([^"']+)["']/i)
-  if (iconMatch) {
-    return resolveUrl(iconMatch[1], baseUrl)
-  }
-  
-  // 默认使用 /favicon.png
   const domain = new URL(baseUrl).origin
-  return `${domain}/favicon.png`
+
+  // 尝试多种favicon格式，按优先级排序
+  const faviconPatterns = [
+    // 标准icon链接（支持多种rel值）
+    /<link[^>]*rel=["'](?:icon|shortcut icon)["'][^>]*href=["']([^"']+)["']/i,
+    /<link[^>]*href=["']([^"']+)["'][^>]*rel=["'](?:icon|shortcut icon)["']/i,
+
+    // Apple touch icon（高质量移动设备图标）
+    /<link[^>]*rel=["']apple-touch-icon["'][^>]*href=["']([^"']+)["']/i,
+    /<link[^>]*href=["']([^"']+)["'][^>]*rel=["']apple-touch-icon["']/i,
+
+    // Apple touch icon带尺寸
+    /<link[^>]*rel=["']apple-touch-icon[^"']*["'][^>]*href=["']([^"']+)["']/i,
+
+    // Windows磁贴图标
+    /<meta[^>]*name=["']msapplication-TileImage["'][^>]*content=["']([^"']+)["']/i,
+
+    // 通用meta图标
+    /<link[^>]*rel=["']icon["'][^>]*type=["']image\/[^"']+["'][^>]*href=["']([^"']+)["']/i,
+  ]
+
+  for (const pattern of faviconPatterns) {
+    const match = html.match(pattern)
+    if (match && match[1]) {
+      const iconUrl = resolveUrl(match[1], baseUrl)
+      // 验证URL不是数据URI或无效链接
+      if (iconUrl && !iconUrl.startsWith('data:') && iconUrl.startsWith('http')) {
+        return iconUrl
+      }
+    }
+  }
+
+  // 尝试常见的默认favicon路径
+  const defaultPaths = [
+    '/favicon.ico',
+    '/favicon.png',
+    '/favicon.svg',
+    '/apple-touch-icon.png',
+    '/apple-touch-icon-precomposed.png'
+  ]
+
+  // 返回第一个默认路径（通常是favicon.ico）
+  return `${domain}${defaultPaths[0]}`
 }
 
 // itch.io 专门处理函数
