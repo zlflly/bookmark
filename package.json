@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "prisma generate && next build && rm -rf .next/cache",
+    "build": "prisma generate && next build && npx @cloudflare/next-on-pages && rm -rf .next/cache",
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
@@ -11,6 +11,7 @@
     "db:init": "node scripts/init-db.js"
   },
   "dependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
     "@hookform/resolvers": "^3.10.0",
     "@prisma/adapter-d1": "^7.7.0",
     "@prisma/client": "^6.14.0",
