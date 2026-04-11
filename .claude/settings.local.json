@@ -31,7 +31,16 @@
       "WebFetch(domain:torcado.itch.io)",
       "WebFetch(domain:itch.io)",
       "Bash(dir:*)",
-      "Bash(sqlite3:*)"
+      "Bash(sqlite3:*)",
+      "Bash(findstr:*)",
+      "Bash(ls:*)",
+      "Bash(git remote:*)",
+      "Bash(pnpm prisma:*)",
+      "Bash(npx wrangler:*)",
+      "Bash(rm -rf prisma/migrations/001_initial)",
+      "Bash(mv prisma/migrations/001_init.sql prisma/migrations/migration.sql)",
+      "Bash(rm -f prisma/dev.db)",
+      "Bash(touch prisma/dev.db)"
     ],
     "deny": [],
     "ask": []

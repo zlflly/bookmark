@@ -1,14 +1,18 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("POSTGRES_PRISMA_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
+// D1/SQLite 不支持 cuid()，使用随机16字节十六进制字符串
+// 格式: 32个十六进制字符 (16 bytes = 128 bits = 32 hex chars)
+
 model User {
-  id          String       @id @default(cuid())
+  id          String       @id @default(dbgenerated("(lower(hex(randomblob(16))))"))
   email       String       @unique
   displayName String?      @map("display_name")
   avatarUrl   String?      @map("avatar_url")
@@ -24,7 +28,7 @@ model User {
 }
 
 model Note {
-  id          String           @id @default(cuid())
+  id          String           @id @default(dbgenerated("(lower(hex(randomblob(16))))"))
   userId      String           @map("user_id")
   type        NoteType
   title       String?
@@ -43,21 +47,20 @@ model Note {
   accessedAt  DateTime         @default(now()) @map("accessed_at")
   color       String?          @default("default")
   isHidden    Boolean          @default(false) @map("is_hidden")
+  isPinned    Boolean          @default(false) @map("is_pinned")
+  pinnedAt    DateTime?        @map("pinned_at")
   collections NoteCollection[]
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   sharedNotes SharedNote[]
 
   @@index([userId])
   @@index([type])
-  @@index([createdAt(sort: Desc)])
-  @@index([userId, createdAt(sort: Desc)]) // 复合索引优化分页查询
-  @@index([userId, type, createdAt(sort: Desc)]) // 优化类型过滤查询
-  @@index([userId, isArchived, createdAt(sort: Desc)]) // 优化归档过滤
+  @@index([createdAt])
   @@map("notes")
 }
 
 model Collection {
-  id          String           @id @default(cuid())
+  id          String           @id @default(dbgenerated("(lower(hex(randomblob(16))))"))
   userId      String           @map("user_id")
   name        String
   description String?
@@ -84,7 +87,7 @@ model NoteCollection {
 }
 
 model SharedNote {
-  id           String    @id @default(cuid())
+  id           String    @id @default(dbgenerated("(lower(hex(randomblob(16))))"))
   noteId       String    @map("note_id")
   sharedBy     String    @map("shared_by")
   shareToken   String    @unique @map("share_token")
