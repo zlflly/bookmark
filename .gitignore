@@ -18,6 +18,11 @@ yarn-error.log*
 
 # env files
 .env*
+.env
+
+# hidden files and directories
+.bmad-core/
+.claude/
 
 # vercel
 .vercel
