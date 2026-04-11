@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server'
 import { put } from '@vercel/blob'
+export const runtime = 'nodejs'
 
 // 移除 edge runtime 以避免 4MB 限制
-// export const runtime = 'edge'
 
 // 配置上传大小限制
 export const maxDuration = 60 // 60秒超时
