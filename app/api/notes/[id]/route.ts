@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { 

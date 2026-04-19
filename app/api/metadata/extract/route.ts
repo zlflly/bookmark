@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-export const runtime = 'nodejs'
+export const runtime = 'edge'
 
 // 真正的链接元数据提取函数
 async function extractMetadata(url: string) {

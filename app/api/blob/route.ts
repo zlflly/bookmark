@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { put } from '@vercel/blob'
-export const runtime = 'nodejs'
+export const runtime = 'edge'
 
 // 移除 edge runtime 以避免 4MB 限制
 
