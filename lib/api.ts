@@ -3,30 +3,33 @@ import { apiCache, metadataCache, generateCacheKey } from './cache';
 import { optimisticCache } from './optimistic-cache';
 import { offlineStorage } from './indexeddb-storage';
 import { offlineSync } from './offline-sync';
-import type { 
-  Note, 
-  APIResponse, 
-  CreateNoteData, 
-  UpdateNoteData, 
+import type {
+  Note,
+  APIResponse,
+  CreateNoteData,
+  UpdateNoteData,
   LinkMetadata,
   OperationResult,
   APIError as APIErrorInterface
 } from './types';
-import { 
-  createNoteSchema, 
-  updateNoteSchema, 
+import {
+  createNoteSchema,
+  updateNoteSchema,
   metadataExtractionSchema,
   paginationSchema,
   sanitizeString,
   sanitizeUrl
 } from './validation';
-import { 
-  handleError, 
-  createNetworkError, 
+import {
+  handleError,
+  createNetworkError,
   createValidationError,
   ErrorType,
   ErrorSeverity
 } from './error-handler';
+
+// API 基础 URL - 使用 Worker 或内部 API
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 // 重新导出类型，保持向后兼容
 export type { Note, APIResponse } from './types';
@@ -121,7 +124,7 @@ export async function fetchNotes(page = 1, limit = 20, search?: string): Promise
       params.append('search', search);
     }
 
-    const response = await fetch(`/api/notes?${params.toString()}`);
+    const response = await fetch(`${API_BASE_URL}/api/notes?${params.toString()}`);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -218,7 +221,7 @@ async function fetchNotesFromServer(page: number, limit: number, search?: string
       params.append('search', search);
     }
 
-    const response = await fetch(`/api/notes?${params.toString()}`);
+    const response = await fetch(`${API_BASE_URL}/api/notes?${params.toString()}`);
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -305,7 +308,7 @@ export async function createNote(noteData: {
       };
     }
 
-    const response = await fetch('/api/notes', {
+    const response = await fetch(`${API_BASE_URL}/api/notes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -389,7 +392,7 @@ export async function createNote(noteData: {
 // 更新笔记
 export async function updateNote(id: string, noteData: Partial<Note>): Promise<APIResponse<Note>> {
   try {
-    const response = await fetch(`/api/notes/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/notes/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -433,7 +436,7 @@ export async function deleteNote(id: string): Promise<APIResponse<{ message: str
       await offlineSync.addOfflineOperation(
         'delete',
         'DELETE',
-        `/api/notes/${id}`
+        `${API_BASE_URL}/api/notes/${id}`
       );
       
       // 立即从本地存储删除
@@ -445,7 +448,7 @@ export async function deleteNote(id: string): Promise<APIResponse<{ message: str
       };
     }
 
-    const response = await fetch(`/api/notes/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/notes/${id}`, {
       method: 'DELETE',
     });
     
@@ -475,7 +478,7 @@ export async function deleteNote(id: string): Promise<APIResponse<{ message: str
       await offlineSync.addOfflineOperation(
         'delete',
         'DELETE',
-        `/api/notes/${id}`
+        `${API_BASE_URL}/api/notes/${id}`
       );
       
       await offlineStorage.deleteNote(id);
@@ -523,7 +526,7 @@ export async function extractMetadata(url: string): Promise<APIResponse<{
       return cachedData
     }
 
-    const response = await fetch('/api/metadata/extract', {
+    const response = await fetch(`${API_BASE_URL}/api/metadata/extract`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

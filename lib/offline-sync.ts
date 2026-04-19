@@ -6,6 +6,8 @@
 import { offlineStorage, type OfflineOperation } from './indexeddb-storage';
 import type { Note } from './types';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 export interface SyncOptions {
   maxRetries?: number;
   retryDelay?: number;
@@ -291,7 +293,7 @@ class OfflineSyncManager {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), options.timeout);
 
-      const response = await fetch(operation.url, {
+      const response = await fetch(`${API_BASE_URL}${operation.url}`, {
         method: operation.method,
         headers: {
           'Content-Type': 'application/json',
