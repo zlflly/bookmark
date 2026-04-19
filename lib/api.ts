@@ -28,8 +28,10 @@ import {
   ErrorSeverity
 } from './error-handler';
 
-// API 基础 URL - 使用 Worker 或内部 API
+// API 基础 URL - 使用 Worker (用于笔记 CRUD)
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bookmarkdb.zlflly.asia';
+// Pages API URL - 用于需要 Next.js 环境的路由 (元数据提取, 图片代理等)
+const PAGES_API_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://book.zlflly.asia';
 
 // 重新导出类型，保持向后兼容
 export type { Note, APIResponse } from './types';
@@ -526,7 +528,7 @@ export async function extractMetadata(url: string): Promise<APIResponse<{
       return cachedData
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/metadata/extract`, {
+    const response = await fetch(`${PAGES_API_URL}/api/metadata/extract`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

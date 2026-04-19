@@ -35,6 +35,12 @@ function serializeRow(row: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify({
     success: true,
@@ -42,7 +48,10 @@ function jsonResponse(data: unknown, status = 200) {
     ...(typeof data === 'object' && data !== null ? data : { data }),
   }), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS,
+    },
   });
 }
 
@@ -52,7 +61,10 @@ function errorResponse(code: string, message: string, status = 400) {
     error: { code, message },
   }), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS,
+    },
   });
 }
 
