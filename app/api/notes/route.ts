@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { D1Database } from '@cloudflare/workers-types';
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
-
-interface Env {
-  DB: D1Database;
-}
 
 // 获取笔记列表
 export async function GET(request: NextRequest) {
@@ -15,7 +12,7 @@ export async function GET(request: NextRequest) {
   const search = url.searchParams.get('search')?.trim();
   const offset = (page - 1) * limit;
 
-  const env = (globalThis as { cloudflare?: { env?: Env } }).cloudflare?.env;
+  const env = (globalThis as { env?: { DB: D1Database } }).env;
   if (!env?.DB) {
     return NextResponse.json({ success: false, error: { code: 'NO_DB', message: 'Database not configured' } }, { status: 500 });
   }

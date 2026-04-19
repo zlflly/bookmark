@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { D1Database } from '@cloudflare/workers-types';
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
-
-interface Env {
-  DB: D1Database;
-}
 
 function serializeNote(row: Record<string, unknown>): Record<string, unknown> {
   if (!row) return {};
@@ -22,7 +19,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const env = (globalThis as { cloudflare?: { env?: Env } }).cloudflare?.env;
+  const env = (globalThis as { env?: { DB: D1Database } }).env;
   if (!env?.DB) {
     return NextResponse.json({ success: false, error: { code: 'NO_DB', message: 'Database not configured' } }, { status: 500 });
   }
@@ -87,7 +84,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const env = (globalThis as { cloudflare?: { env?: Env } }).cloudflare?.env;
+  const env = (globalThis as { env?: { DB: D1Database } }).env;
   if (!env?.DB) {
     return NextResponse.json({ success: false, error: { code: 'NO_DB', message: 'Database not configured' } }, { status: 500 });
   }
@@ -149,7 +146,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const env = (globalThis as { cloudflare?: { env?: Env } }).cloudflare?.env;
+  const env = (globalThis as { env?: { DB: D1Database } }).env;
   if (!env?.DB) {
     return NextResponse.json({ success: false, error: { code: 'NO_DB', message: 'Database not configured' } }, { status: 500 });
   }
