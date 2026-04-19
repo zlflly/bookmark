@@ -22,8 +22,8 @@ export async function getEdgePrisma(): Promise<PrismaClient> {
     return cachedPrisma
   }
 
-  // 回退到标准 PrismaClient (本地开发)
-  cachedPrisma = new PrismaClient()
+  // 回退到本地开发 PrismaClient
+  cachedPrisma = getLocalPrisma()
   return cachedPrisma
 }
 
@@ -44,11 +44,15 @@ export function getPrismaClient(env?: { DB?: D1Database }): PrismaClient {
   return globalForPrisma.prisma
 }
 
-// 导出默认实例（用于本地开发/非 Edge 环境）
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+// 仅本地开发使用的 PrismaClient（Node.js 环境）
+function getLocalPrisma(): PrismaClient {
+  const globalForPrisma = globalThis as unknown as {
+    prisma: PrismaClient | undefined
+  }
+
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = new PrismaClient()
+  }
+
+  return globalForPrisma.prisma
 }
-
-export const prisma = globalForPrisma.prisma ?? new PrismaClient()
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma

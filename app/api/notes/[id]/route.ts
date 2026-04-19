@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 import { getEdgePrisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { 
