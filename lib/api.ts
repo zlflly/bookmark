@@ -29,7 +29,7 @@ import {
 } from './error-handler';
 
 // API 基础 URL - 使用 Worker 或内部 API
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bookmarkdb.zlflly.asia';
 
 // 重新导出类型，保持向后兼容
 export type { Note, APIResponse } from './types';
