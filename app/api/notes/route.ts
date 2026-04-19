@@ -1,186 +1,137 @@
 import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
-import { getEdgePrisma } from '@/lib/prisma';
-import { z } from 'zod';
-import {
-  createAPIResponse,
-  securityHeaders
-} from '@/lib/api-middleware';
-import {
-  createNoteSchema,
-  sanitizeString,
-  sanitizeUrl
-} from '@/lib/validation';
-import type { NoteType } from '@/lib/types';
 
-// 查询验证模式 - 手动处理查询参数
-const parseQuery = (searchParams: URLSearchParams) => {
-  const page = parseInt(searchParams.get('page') || '1', 10) || 1;
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10) || 20, 100);
-  const typeParam = searchParams.get('type');
-  const type = typeParam && ['LINK', 'TEXT', 'IMAGE', 'TODO'].includes(typeParam)
-    ? typeParam as NoteType
-    : undefined;
-  const search = searchParams.get('search')?.trim() || undefined;
-
-  return { page, limit, type, search };
-};
+interface Env {
+  DB: D1Database;
+}
 
 // 获取笔记列表
 export async function GET(request: NextRequest) {
-  const prisma = await getEdgePrisma();
-  try {
-    const { page, limit, type, search } = parseQuery(request.nextUrl.searchParams);
+  const url = request.nextUrl;
+  const page = parseInt(url.searchParams.get('page') || '1') || 1;
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '20') || 20, 100);
+  const type = url.searchParams.get('type');
+  const search = url.searchParams.get('search')?.trim();
+  const offset = (page - 1) * limit;
 
-    const defaultUserId = 'demo-user';
-
-    const where = {
-      userId: defaultUserId,
-      isArchived: false,
-      ...(type && { type }),
-      ...(search && {
-        OR: [
-          { title: { contains: search, mode: 'insensitive' as const } },
-          { content: { contains: search, mode: 'insensitive' as const } },
-          { description: { contains: search, mode: 'insensitive' as const } },
-          { tags: { contains: search, mode: 'insensitive' as const } },
-        ],
-      }),
-    };
-
-    const [notes, total] = await Promise.all([
-      prisma.note.findMany({
-        where,
-        orderBy: [
-          { createdAt: 'desc' },
-          { id: 'desc' }
-        ],
-        skip: (page - 1) * limit,
-        take: limit,
-        select: {
-          id: true,
-          type: true,
-          title: true,
-          content: true,
-          url: true,
-          description: true,
-          domain: true,
-          faviconUrl: true,
-          imageUrl: true,
-          tags: true,
-          isArchived: true,
-          isFavorite: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      page === 1 ?
-        prisma.note.count({ where }) :
-        prisma.note.count({ where }),
-    ]);
-
-    return NextResponse.json(
-      createAPIResponse(
-        notes,
-        undefined,
-        {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        }
-      ),
-      { headers: securityHeaders() }
-    );
-  } catch (error) {
-    console.error('获取笔记失败:', error);
-    return NextResponse.json(
-      createAPIResponse(undefined, {
-        code: 'FETCH_NOTES_ERROR',
-        message: '获取笔记失败'
-      }),
-      {
-        status: 500,
-        headers: securityHeaders()
-      }
-    );
+  const env = (globalThis as { cloudflare?: { env?: Env } }).cloudflare?.env;
+  if (!env?.DB) {
+    return NextResponse.json({ success: false, error: { code: 'NO_DB', message: 'Database not configured' } }, { status: 500 });
   }
+
+  const defaultUserId = 'demo-user';
+
+  let whereClause = `WHERE user_id = ? AND is_archived = 0`;
+  const bindings: (string | number)[] = [defaultUserId];
+
+  if (type && ['LINK', 'TEXT', 'IMAGE', 'TODO'].includes(type)) {
+    whereClause += ` AND type = ?`;
+    bindings.push(type);
+  }
+
+  if (search) {
+    whereClause += ` AND (title LIKE ? OR content LIKE ? OR description LIKE ? OR tags LIKE ?)`;
+    const searchPattern = `%${search}%`;
+    bindings.push(searchPattern, searchPattern, searchPattern, searchPattern);
+  }
+
+  // Count total
+  const countStmt = env.DB.prepare(`SELECT COUNT(*) as total FROM notes ${whereClause}`);
+  const countResult = await countStmt.bind(...bindings).first<{ total: number }>();
+
+  // Get notes
+  const notesStmt = env.DB.prepare(`
+    SELECT id, type, title, content, url, description, domain, favicon_url as faviconUrl,
+           image_url as imageUrl, tags, is_archived as isArchived, is_favorite as isFavorite,
+           created_at as createdAt, updated_at as updatedAt
+    FROM notes ${whereClause}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ? OFFSET ?
+  `);
+  const notes = await notesStmt.bind(...bindings, limit, offset).all<Record<string, unknown>>();
+
+  return NextResponse.json({
+    success: true,
+    timestamp: new Date().toISOString(),
+    data: notes.results,
+    pagination: {
+      page,
+      limit,
+      total: countResult?.total || 0,
+      totalPages: Math.ceil((countResult?.total || 0) / limit),
+    },
+  });
 }
 
 // 创建新笔记
 export async function POST(request: NextRequest) {
-  const prisma = await getEdgePrisma();
+  const env = (globalThis as { cloudflare?: { env?: Env } }).cloudflare?.env;
+  if (!env?.DB) {
+    return NextResponse.json({ success: false, error: { code: 'NO_DB', message: 'Database not configured' } }, { status: 500 });
+  }
+
   try {
     const body = await request.json();
-    const validatedData = createNoteSchema.parse(body);
-
     const defaultUserId = 'demo-user';
 
-    let user = await prisma.user.findUnique({
-      where: { id: defaultUserId },
-    });
+    // 确保用户存在
+    const userStmt = env.DB.prepare(`SELECT id FROM users WHERE id = ?`);
+    const existingUser = await userStmt.bind(defaultUserId).first();
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          id: defaultUserId,
-          email: 'demo@example.com',
-          displayName: '演示用户',
-        },
-      });
+    if (!existingUser) {
+      await env.DB.prepare(`
+        INSERT INTO users (id, email, display_name, preferences, created_at, updated_at)
+        VALUES (?, ?, ?, '{}', datetime('now'), datetime('now'))
+      `).bind(defaultUserId, 'demo@example.com', '演示用户').run();
     }
 
-    const cleanData = {
-      userId: defaultUserId,
-      type: validatedData.type || (validatedData.url ? 'LINK' as const : 'TEXT' as const),
-      title: validatedData.title ? sanitizeString(validatedData.title) : null,
-      content: validatedData.content ? sanitizeString(validatedData.content) : null,
-      url: validatedData.url ? sanitizeUrl(validatedData.url) : null,
-      description: validatedData.description ? sanitizeString(validatedData.description) : null,
-      domain: validatedData.domain ? sanitizeString(validatedData.domain) : null,
-      faviconUrl: validatedData.faviconUrl ? sanitizeUrl(validatedData.faviconUrl) : null,
-      imageUrl: validatedData.imageUrl ? sanitizeUrl(validatedData.imageUrl) : null,
-      tags: validatedData.tags ? sanitizeString(validatedData.tags) : '',
-    };
+    // 生成 ID
+    const idStmt = env.DB.prepare(`SELECT lower(hex(randomblob(16))) as id`);
+    const idResult = await idStmt.first<{ id: string }>();
+    const id = idResult?.id || crypto.randomUUID();
 
-    const note = await prisma.note.create({
-      data: cleanData,
-    });
+    const type = body.url ? 'LINK' : (body.type || 'TEXT');
+    const now = new Date().toISOString();
 
-    return NextResponse.json(
-      createAPIResponse(note),
-      {
-        status: 201,
-        headers: securityHeaders()
-      }
-    );
+    const insertStmt = env.DB.prepare(`
+      INSERT INTO notes (id, user_id, type, title, content, url, description, domain,
+                         favicon_url, image_url, tags, metadata, is_archived, is_favorite,
+                         created_at, updated_at, accessed_at, color, is_hidden, is_pinned)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 0, 0, ?, ?, ?, 'default', 0, 0)
+    `);
+
+    await insertStmt.bind(
+      id,
+      defaultUserId,
+      type,
+      body.title || null,
+      body.content || null,
+      body.url || null,
+      body.description || null,
+      body.domain || null,
+      body.faviconUrl || null,
+      body.imageUrl || null,
+      body.tags || '',
+      now,
+      now,
+      now
+    ).run();
+
+    const noteStmt = env.DB.prepare(`SELECT * FROM notes WHERE id = ?`);
+    const note = await noteStmt.bind(id).first();
+
+    return NextResponse.json({
+      success: true,
+      timestamp: now,
+      data: note,
+    }, { status: 201 });
+
   } catch (error) {
     console.error('创建笔记失败:', error);
-    if (error instanceof z.ZodError) {
-      const errorMessage = error.errors
-        .map(err => `${err.path.join('.')}: ${err.message}`)
-        .join(', ');
-      return NextResponse.json(
-        createAPIResponse(undefined, {
-          code: 'VALIDATION_ERROR',
-          message: `输入验证失败: ${errorMessage}`
-        }),
-        {
-          status: 400,
-          headers: securityHeaders()
-        }
-      );
-    }
-    return NextResponse.json(
-      createAPIResponse(undefined, {
-        code: 'CREATE_NOTE_ERROR',
-        message: '创建笔记失败'
-      }),
-      {
-        status: 500,
-        headers: securityHeaders()
-      }
-    );
+    return NextResponse.json({
+      success: false,
+      error: { code: 'CREATE_ERROR', message: '创建笔记失败' },
+    }, { status: 500 });
   }
 }
