@@ -73,18 +73,23 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
-  
+
+  // 跨域请求 (如API代理) 直接放行，不拦截
+  if (shouldBypassSW(request)) {
+    return;
+  }
+
   // 只处理同源请求
   if (url.origin !== self.location.origin) {
     return;
   }
-  
+
   // API请求处理
   if (isApiRequest(url.pathname)) {
     event.respondWith(handleApiRequest(request));
     return;
   }
-  
+
   // 静态资源处理
   event.respondWith(handleStaticRequest(request));
 });
@@ -92,6 +97,16 @@ self.addEventListener('fetch', event => {
 // 检查是否为API请求
 function isApiRequest(pathname) {
   return API_PATTERNS.some(pattern => pattern.test(pathname));
+}
+
+// 检查是否应绕过Service Worker (跨域API请求)
+function shouldBypassSW(request) {
+  const url = new URL(request.url);
+  // 如果是跨域请求 (指向外部Worker)，直接放行
+  if (url.origin !== self.location.origin) {
+    return true;
+  }
+  return false;
 }
 
 // 处理API请求
