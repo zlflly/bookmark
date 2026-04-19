@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'edge';
-import { prisma } from '@/lib/prisma';
+import { getEdgePrisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { 
   withValidation, 
@@ -20,15 +20,16 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const prisma = await getEdgePrisma();
   try {
     const { id } = await params;
-    
+
     // 验证ID格式
     const validatedId = noteIdSchema.parse(id);
-    
+
     // 为演示目的，使用与主路由相同的默认用户ID
     const defaultUserId = 'demo-user';
-    
+
     const note = await prisma.note.findUnique({
       where: { 
         id: validatedId,
@@ -127,6 +128,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const prisma = await getEdgePrisma();
   try {
     const { id } = await params;
     const validatedId = noteIdSchema.parse(id);
@@ -223,6 +225,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const prisma = await getEdgePrisma();
   try {
     const { id } = await params;
     const validatedId = noteIdSchema.parse(id);

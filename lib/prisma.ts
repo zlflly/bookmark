@@ -2,18 +2,53 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaD1 } from '@prisma/adapter-d1'
 import type { D1Database } from '@cloudflare/workers-types'
 
-// D1 客户端工厂函数
+// D1 客户端工厂函数 - 用于 Edge Runtime
 export function createPrismaClient(d1Binding: D1Database): PrismaClient {
   const adapter = new PrismaD1(d1Binding)
   return new PrismaClient({ adapter })
 }
 
-// 本地开发/迁移用的 PrismaClient（通过环境变量）
+// 缓存的 Prisma Client
+let cachedPrisma: PrismaClient | null = null
+
+// 获取 Prisma Client - 用于 Edge Runtime (Cloudflare Pages)
+export async function getEdgePrisma(): Promise<PrismaClient> {
+  if (cachedPrisma) return cachedPrisma
+
+  // 尝试从 globalThis.env 获取 D1 binding (Cloudflare Pages)
+  const env = (globalThis as { env?: { DB?: D1Database } }).env
+  if (env?.DB) {
+    cachedPrisma = createPrismaClient(env.DB)
+    return cachedPrisma
+  }
+
+  // 回退到标准 PrismaClient (本地开发)
+  cachedPrisma = new PrismaClient()
+  return cachedPrisma
+}
+
+// 获取 Prisma Client (同步版本，用于本地开发)
+export function getPrismaClient(env?: { DB?: D1Database }): PrismaClient {
+  if (env?.DB) {
+    return createPrismaClient(env.DB)
+  }
+
+  const globalForPrisma = globalThis as unknown as {
+    prisma: PrismaClient | undefined
+  }
+
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = new PrismaClient()
+  }
+
+  return globalForPrisma.prisma
+}
+
+// 导出默认实例（用于本地开发/非 Edge 环境）
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// 用于本地迁移的 PrismaClient（使用本地 D1 或 Supabase）
 export const prisma = globalForPrisma.prisma ?? new PrismaClient()
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
